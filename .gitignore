@@ -1,0 +1,48 @@
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+!frontend/.env.example
+.secrets/
+secrets/
+credentials.json
+
+# Python environments, caches, coverage, and build artifacts
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# SQLite databases and sidecar files
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+backend/data/
+
+# Node dependencies, caches, coverage, and build artifacts
+node_modules/
+.npm-cache/
+coverage/
+frontend/node_modules/
+frontend/.npm-cache/
+frontend/coverage/
+frontend/dist/
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

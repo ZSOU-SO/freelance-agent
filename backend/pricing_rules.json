@@ -1,0 +1,31 @@
+{
+  "currency": "CNY",
+  "rounding_unit": 1000,
+  "project_types": {
+    "website": {"label": "企业网站", "min_amount": 8000, "max_amount": 15000, "min_days": 7, "max_days": 12},
+    "web_app": {"label": "Web 应用", "min_amount": 12000, "max_amount": 22000, "min_days": 12, "max_days": 20},
+    "ecommerce": {"label": "电商系统", "min_amount": 20000, "max_amount": 35000, "min_days": 20, "max_days": 35},
+    "mini_program": {"label": "微信小程序", "min_amount": 15000, "max_amount": 28000, "min_days": 15, "max_days": 25},
+    "mobile_app": {"label": "移动应用", "min_amount": 30000, "max_amount": 50000, "min_days": 30, "max_days": 50},
+    "automation": {"label": "自动化工具", "min_amount": 10000, "max_amount": 20000, "min_days": 8, "max_days": 18},
+    "other": {"label": "其他定制项目", "min_amount": 12000, "max_amount": 25000, "min_days": 12, "max_days": 25}
+  },
+  "features": {
+    "authentication": {"label": "用户认证", "min_amount": 2000, "max_amount": 4000, "min_days": 2, "max_days": 4},
+    "admin_panel": {"label": "管理后台", "min_amount": 4000, "max_amount": 7000, "min_days": 4, "max_days": 7},
+    "payment": {"label": "支付功能", "min_amount": 4000, "max_amount": 6000, "min_days": 3, "max_days": 5},
+    "content_management": {"label": "内容管理", "min_amount": 2500, "max_amount": 5000, "min_days": 2, "max_days": 5},
+    "realtime_chat": {"label": "实时通信", "min_amount": 5000, "max_amount": 9000, "min_days": 5, "max_days": 9},
+    "hardware_integration": {"label": "硬件集成", "min_amount": 8000, "max_amount": 15000, "min_days": 8, "max_days": 15},
+    "third_party_integration": {"label": "第三方平台集成", "min_amount": 3000, "max_amount": 7000, "min_days": 3, "max_days": 7}
+  },
+  "risk_fees": {
+    "payment": {"label": "支付风险预留", "min_amount": 1000, "max_amount": 3000},
+    "hardware": {"label": "硬件联调预留", "min_amount": 3000, "max_amount": 8000},
+    "third_party_platform": {"label": "第三方平台风险预留", "min_amount": 1000, "max_amount": 4000}
+  },
+  "risk_multipliers": {
+    "urgent_delivery": {"label": "紧急交付系数", "multiplier": 1.5},
+    "payment_high": {"label": "高支付风险系数", "multiplier": 1.15}
+  }
+}
