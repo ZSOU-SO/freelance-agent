@@ -2,7 +2,7 @@
 
 `freelance-agent` 是一个面向自由职业者和外包团队的全栈需求分析助手。用户输入客户的原始需求后，系统会提取项目范围、识别交付风险、按照本地规则计算报价和工期，并生成接单建议、技术方案、追问问题及可直接发送给客户的回复。
 
-第一阶段 MVP 支持 OpenAI Agents SDK 与完全离线的本地规则双模式。没有配置 API Key 时，应用仍能正常启动并完成整条分析流程。
+当前版本已完成 Phase 2A：除 OpenAI Agents SDK 与完全离线的本地规则双模式外，还提供本地历史案例库和无需 Embedding 的相似案例检索。没有配置 API Key 时，应用仍能正常启动并完成整条分析流程。
 
 ## 核心功能
 
@@ -12,11 +12,14 @@
 - 输出是否建议接单、技术方案、报价、工期、追问问题和客户回复；
 - 逐步骤记录执行模式、耗时、降级状态和错误信息；
 - 将每次完整分析保存到 SQLite，并在前端展示历史记录；
+- 新增、编辑、删除、列表和查看历史项目案例；
+- 使用纯 Python BM25、中文字符二元组和结构化字段权重检索相似案例；
+- 在分析结果中展示相似度、使用案例的 Agent 和具体影响；
 - 无 `OPENAI_API_KEY` 时自动使用本地规则完成全部分析。
 
 ## Agent 流水线架构
 
-Pipeline Orchestrator 始终按固定顺序编排四个步骤：
+Pipeline Orchestrator 始终按固定顺序编排五个步骤：
 
 ```text
 客户需求文本
@@ -24,6 +27,9 @@ Pipeline Orchestrator 始终按固定顺序编排四个步骤：
     ▼
 RequirementAgent  ── 提取类型、功能、预算、工期及缺失信息
     │ Pydantic 校验
+    ▼
+历史案例检索      ── 本地 BM25 + 中文二元组 + 结构化字段加权
+    │ 相似案例与确定性洞察
     ▼
 TechnicalAgent    ── 生成技术方案、工期、风险及接单建议
     │ Pydantic 校验
@@ -37,9 +43,11 @@ ReplyAgent        ── 生成追问问题、建议摘要和客户回复
 Pipeline Orchestrator 统一响应 ──► SQLite
 ```
 
-每个 Agent 使用独立的 Pydantic 输入、输出模型。前一步输出只有通过校验后才能进入下一步，四个 Agent 不直接构造最终 API 响应。
+每个 Agent 使用独立的 Pydantic 输入、输出模型。前一步输出只有通过校验后才能进入下一步，四个 Agent 不直接构造最终 API 响应。相似案例只传给 TechnicalAgent 和 QuoteAgent；ReplyAgent 不直接消费案例。
 
 `QuoteAgent` 必须调用本地 `calculate_quote` 工具。最终报价始终以 `backend/pricing_rules.json` 的计算结果为准，大模型只能补充报价解释、假设和付款建议，不能修改金额区间。
+
+历史成交价同样只能作为比较和解释。TechnicalAgent 只有在至少两个高质量已成交案例显示超过 15% 的工期偏差时，才会把最大工期上调，且最多上调 20%。
 
 第一阶段没有 Manager Agent 和 handoff；执行器接口与编排层已保持独立，便于后续扩展。
 
@@ -52,6 +60,8 @@ Pipeline Orchestrator 统一响应 ──► SQLite
 
 两种模式使用完全相同的 `AnalysisResponse` 数据结构，前端、存储层和测试无需针对模式维护两套契约。
 
+历史案例检索始终可在本地运行。案例库为空、相似度不足或检索失败都不会中断原有分析；结果分别标记为 `empty_library`、`no_match` 或 `failed`。检索模式单独记录为 `local_bm25`，不会改变 `analysis_mode`。
+
 ## 技术栈
 
 | 层级 | 技术 |
@@ -59,9 +69,10 @@ Pipeline Orchestrator 统一响应 ──► SQLite
 | 后端 | Python 3.11+、FastAPI、Pydantic v2、Uvicorn |
 | Agent | OpenAI Agents SDK、四 Agent 显式流水线 |
 | 本地分析 | Python 规则执行器、正则与关键词规则 |
+| 案例 RAG | 纯 Python BM25、中文字符二元组、结构化 Jaccard 加权 |
 | 报价 | 本地 `pricing_rules.json` 与受控报价工具 |
 | 数据库 | SQLite |
-| 前端 | Vue 3、TypeScript、Vite |
+| 前端 | Vue 3、Vue Router、TypeScript、Vite |
 | 测试 | pytest、pytest-asyncio、Vitest、Vue Test Utils |
 
 ## 项目目录
@@ -73,8 +84,9 @@ freelance-agent/
 │  │  ├─ agents/          # 四个 OpenAI Agent 工厂
 │  │  ├─ executors/       # Agent 适配器和四个本地执行器
 │  │  ├─ pipeline/        # 固定顺序、校验、降级和遥测
+│  │  ├─ retrieval/       # BM25 Provider、检索服务和案例洞察
 │  │  ├─ services/        # 报价、风险和工期规则
-│  │  ├─ persistence/     # SQLite 数据库与 repository
+│  │  ├─ persistence/     # SQLite、版本化迁移与 repositories
 │  │  ├─ api/             # FastAPI 路由与依赖
 │  │  ├─ schemas/         # 统一 Pydantic 数据契约
 │  │  └─ main.py          # FastAPI 应用工厂
@@ -86,6 +98,8 @@ freelance-agent/
 │  │  ├─ api/             # 后端 API 客户端
 │  │  ├─ components/      # 表单、结果、历史和遥测组件
 │  │  ├─ composables/     # 分析状态管理
+│  │  ├─ router/          # 分析与案例管理路由
+│  │  ├─ views/           # 分析、案例列表和案例表单页面
 │  │  ├─ tests/           # 前端组件测试
 │  │  └─ types/           # 统一响应 TypeScript 类型
 │  ├─ package.json
@@ -162,7 +176,15 @@ npm.cmd --prefix frontend run dev
 | `POST` | `/api/v1/analyses` | 执行并保存一次分析 |
 | `GET` | `/api/v1/analyses` | 分页读取历史记录 |
 | `GET` | `/api/v1/analyses/{id}` | 读取一条完整记录 |
+| `POST` | `/api/v1/cases` | 新增历史案例 |
+| `GET` | `/api/v1/cases` | 分页、筛选和搜索历史案例 |
+| `GET` | `/api/v1/cases/{id}` | 查看案例详情 |
+| `PUT` | `/api/v1/cases/{id}` | 完整编辑案例 |
+| `DELETE` | `/api/v1/cases/{id}` | 删除案例 |
+| `POST` | `/api/v1/cases/search` | 本地检索相似案例 |
 | `GET` | `/api/v1/health` | 查看服务状态和默认分析模式 |
+
+首次启动会在同一 SQLite 文件内幂等创建 `schema_migrations` 和 `historical_cases`。案例迁移失败时服务健康状态变为 `degraded`，案例 API 返回 503，但 Phase 1 分析能力仍可使用。
 
 ## 测试命令
 
@@ -180,7 +202,7 @@ npm.cmd --prefix frontend test -- --run
 npm.cmd --prefix frontend run build
 ```
 
-测试覆盖四个 Agent 适配器、四个本地执行器、报价工具、风险与工期规则、完整流水线、SQLite repository、FastAPI 接口和主要 Vue 组件。Agent 单元测试通过注入 runner 完成，不调用真实服务。
+测试覆盖四个 Agent 适配器、四个本地执行器、报价工具、风险与工期规则、BM25 排序、案例洞察、迁移、案例 CRUD/Search API、五步流水线、SQLite repositories 和主要 Vue 页面。Agent 单元测试通过注入 runner 完成，不调用真实服务。
 
 ## 示例输入与输出
 
@@ -277,13 +299,30 @@ npm.cmd --prefix frontend run build
         "duration_ms": 0.8,
         "fallback_used": false,
         "error": null
+      },
+      {
+        "step": "case_retrieval",
+        "execution_mode": "local_retrieval",
+        "duration_ms": 0.4,
+        "fallback_used": false,
+        "status": "empty_library",
+        "error": null
       }
     ]
+  },
+  "case_rag": {
+    "status": "empty_library",
+    "retrieval_mode": "local_bm25",
+    "min_similarity": 0.25,
+    "matches": [],
+    "used_by_agents": [],
+    "impact_summary": [],
+    "candidate_count": 0
   }
 }
 ```
 
-实际响应还会包含完整的 `technical_solution`、`estimated_duration`、`risks` 以及四个步骤的遥测记录。统一契约以 FastAPI 的 `/docs` 页面为准。
+实际响应还会包含完整的 `technical_solution`、`estimated_duration`、`risks` 以及五个步骤的遥测记录。有匹配时，`case_rag.matches` 会逐条包含相似度、命中信号、使用 Agent 和影响。统一契约以 FastAPI 的 `/docs` 页面为准。
 
 ## 报价规则
 
@@ -302,6 +341,7 @@ npm.cmd --prefix frontend run build
 - 本地需求提取依赖关键词和正则表达式，对复杂或含糊需求的理解有限；
 - 第一阶段没有登录、权限和多租户隔离；
 - SQLite 适合单机和小规模使用，不适合高并发部署；
+- 本地 BM25 第一版适合约 2,000 条以内的案例库，不理解真正的语义同义关系；
 - 未实现 Manager Agent、handoff、流式输出或队列任务；
 - Agents 模式会产生 OpenAI API 调用费用，本地模式不会调用大模型。
 
@@ -313,6 +353,7 @@ npm.cmd --prefix frontend run build
 - 增加可视化报价规则管理和版本审计；
 - 增加 Manager Agent、handoff 或可配置编排策略；
 - 增加流式进度、后台任务与失败重试；
+- 在真实案例评估证明必要后，实现 Embedding Provider；当前仅保留扩展接口，不调用向量 API；
 - 将生产数据库迁移到 PostgreSQL，并补充部署与监控方案；
 - 增加真实 Agents 模式的受控端到端验收流程。
 

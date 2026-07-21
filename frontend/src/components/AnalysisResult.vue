@@ -1,9 +1,21 @@
 <script setup lang="ts">
 import AnalysisModeBadge from './AnalysisModeBadge.vue'
+import SimilarCasesPanel from './SimilarCasesPanel.vue'
 import StepTelemetry from './StepTelemetry.vue'
 import type { AnalysisResponse, RiskCategory, RiskSeverity } from '../types/analysis'
+import type { CaseRagResult } from '../types/case'
 
-defineProps<{ analysis: AnalysisResponse }>()
+const props = defineProps<{ analysis: AnalysisResponse }>()
+
+const notRunCaseRag: CaseRagResult = {
+  status: 'not_run',
+  retrieval_mode: 'local_bm25',
+  min_similarity: 0.25,
+  matches: [],
+  used_by_agents: [],
+  impact_summary: [],
+  candidate_count: 0,
+}
 
 const riskLabels: Record<RiskCategory, string> = {
   payment: '支付风险',
@@ -105,6 +117,8 @@ function formatCurrency(value: number) {
       <p v-else class="muted">当前信息足够进入方案确认。</p>
     </section>
 
+    <SimilarCasesPanel :result="props.analysis.case_rag || notRunCaseRag" />
+
     <section class="result-section reply-section">
       <h3>客户回复建议</h3>
       <p>{{ analysis.client_reply }}</p>
@@ -116,4 +130,3 @@ function formatCurrency(value: number) {
     />
   </article>
 </template>
-

@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from backend.app.persistence.database import connect, initialize_database
+from pydantic import ValidationError
+
+from backend.app.persistence.database import (
+    DatabaseCapabilities,
+    connect,
+    initialize_database,
+)
+from backend.app.persistence.migrations import MigrationRunner
 from backend.app.schemas.analysis import AnalysisListResponse, AnalysisResponse
 
 
@@ -10,8 +17,12 @@ class AnalysisRepository:
     def __init__(self, database_path: str | Path):
         self.database_path = Path(database_path)
 
-    def initialize(self) -> None:
-        initialize_database(self.database_path)
+    def initialize(
+        self, *, migration_runner: MigrationRunner | None = None
+    ) -> DatabaseCapabilities:
+        return initialize_database(
+            self.database_path, migration_runner=migration_runner
+        )
 
     def save(self, analysis: AnalysisResponse) -> None:
         with connect(self.database_path) as connection:
@@ -46,20 +57,26 @@ class AnalysisRepository:
             total = connection.execute("SELECT COUNT(*) FROM analyses").fetchone()[0]
             rows = connection.execute(
                 """
-                SELECT result_json
+                SELECT id, result_json
                 FROM analyses
                 ORDER BY created_at DESC, rowid DESC
                 LIMIT ? OFFSET ?
                 """,
                 (limit, offset),
             ).fetchall()
+        items: list[AnalysisResponse] = []
+        warnings: list[str] = []
+        for row in rows:
+            try:
+                items.append(
+                    AnalysisResponse.model_validate_json(row["result_json"])
+                )
+            except ValidationError:
+                warnings.append(f"Skipped invalid analysis {row['id']}")
         return AnalysisListResponse(
-            items=[
-                AnalysisResponse.model_validate_json(row["result_json"])
-                for row in rows
-            ],
+            items=items,
             total=total,
             limit=limit,
             offset=offset,
+            warnings=warnings,
         )
-

@@ -4,6 +4,11 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from backend.app.schemas.case import (
+    AgentCaseImpact,
+    CaseInsight,
+    SimilarCaseMatch,
+)
 from backend.app.schemas.common import RiskItem, StrictModel
 from backend.app.schemas.requirement import RequirementAgentOutput
 from backend.app.schemas.technical import TechnicalAgentOutput
@@ -42,6 +47,8 @@ class PricingCalculation(StrictModel):
 class QuoteAgentInput(StrictModel):
     requirement: RequirementAgentOutput
     technical: TechnicalAgentOutput
+    similar_cases: list[SimilarCaseMatch] = Field(default_factory=list)
+    case_insight: CaseInsight = Field(default_factory=CaseInsight)
 
 
 class QuoteAgentOutput(StrictModel):
@@ -49,6 +56,7 @@ class QuoteAgentOutput(StrictModel):
     explanation: str = Field(min_length=1)
     assumptions: list[str] = Field(default_factory=list)
     payment_terms: str = Field(min_length=1)
+    case_impacts: list[AgentCaseImpact] = Field(default_factory=list)
 
 
 class QuoteResult(QuoteAgentOutput):
@@ -59,4 +67,3 @@ class PricingToolInput(StrictModel):
     project_type: str
     features: list[str]
     risks: list[RiskItem]
-

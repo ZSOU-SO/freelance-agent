@@ -4,6 +4,7 @@ from backend.app.executors.local.quote_executor import LocalQuoteExecutor
 from backend.app.executors.local.reply_executor import LocalReplyExecutor
 from backend.app.executors.local.requirement_executor import LocalRequirementExecutor
 from backend.app.executors.local.technical_executor import LocalTechnicalExecutor
+from backend.app.schemas.case import CaseInsight
 from backend.app.schemas.common import RiskCategory
 from backend.app.schemas.quote import QuoteAgentInput
 from backend.app.schemas.reply import ReplyAgentInput
@@ -91,6 +92,69 @@ async def test_quote_executor_uses_pricing_service(
     assert output.pricing.currency == "CNY"
     assert output.pricing.min_amount < output.pricing.max_amount
     assert "本地报价规则" in output.explanation
+
+
+@pytest.mark.asyncio
+async def test_technical_executor_applies_bounded_case_duration_adjustment(
+    pricing_service: PricingService,
+) -> None:
+    requirement = await LocalRequirementExecutor().execute(
+        RequirementAgentInput(requirement_text="开发一个 Web 刷题应用")
+    )
+    executor = LocalTechnicalExecutor(DurationService(pricing_service.rules))
+    baseline = await executor.execute(TechnicalAgentInput(requirement=requirement))
+    insight = CaseInsight(
+        duration_adjustment_percent=20,
+        known_risks=[RiskCategory.THIRD_PARTY_PLATFORM],
+        technical_notes=["历史案例存在浏览器平台限制"],
+        source_project_numbers=["CASE-001", "CASE-002"],
+    )
+
+    adjusted = await executor.execute(
+        TechnicalAgentInput(requirement=requirement, case_insight=insight)
+    )
+
+    assert adjusted.estimated_duration.min_days == baseline.estimated_duration.min_days
+    assert adjusted.estimated_duration.max_days <= int(
+        baseline.estimated_duration.max_days * 1.2 + 0.999
+    )
+    assert adjusted.estimated_duration.max_days > baseline.estimated_duration.max_days
+    assert {impact.project_number for impact in adjusted.case_impacts} == {
+        "CASE-001",
+        "CASE-002",
+    }
+    assert RiskCategory.THIRD_PARTY_PLATFORM in {
+        risk.category for risk in adjusted.risks
+    }
+
+
+@pytest.mark.asyncio
+async def test_quote_executor_keeps_pricing_authoritative_with_case_context(
+    pricing_service: PricingService,
+) -> None:
+    requirement = await LocalRequirementExecutor().execute(
+        RequirementAgentInput(requirement_text="开发一个带支付的 Web 应用")
+    )
+    technical = await LocalTechnicalExecutor(
+        DurationService(pricing_service.rules)
+    ).execute(TechnicalAgentInput(requirement=requirement))
+    expected = pricing_service.calculate(requirement, technical.risks)
+    insight = CaseInsight(
+        quote_context_notes=["历史成交价为 1 CNY，但规则报价保持不变"],
+        source_project_numbers=["CASE-EXTREME"],
+    )
+
+    output = await LocalQuoteExecutor(pricing_service).execute(
+        QuoteAgentInput(
+            requirement=requirement,
+            technical=technical,
+            case_insight=insight,
+        )
+    )
+
+    assert output.pricing == expected
+    assert "历史成交价" in output.explanation
+    assert output.case_impacts[0].project_number == "CASE-EXTREME"
 
 
 @pytest.mark.asyncio

@@ -95,4 +95,27 @@ describe('AnalysisResult', () => {
     })
     expect(wrapper.text()).toContain('部分步骤已自动降级')
   })
+
+  it('keeps the normal result visible when case retrieval failed', () => {
+    const wrapper = mount(AnalysisResult, {
+      props: {
+        analysis: {
+          ...localResult,
+          case_rag: {
+            status: 'failed', retrieval_mode: 'local_bm25', min_similarity: 0.25,
+            matches: [], used_by_agents: [], impact_summary: [], candidate_count: 0,
+            error: '检索失败',
+          },
+        },
+      },
+    })
+    expect(wrapper.text()).toContain('历史案例检索失败')
+    expect(wrapper.text()).toContain('¥24,000')
+    expect(wrapper.text()).toContain('您好，项目可以承接。')
+  })
+
+  it('handles a phase one record without case_rag', () => {
+    const wrapper = mount(AnalysisResult, { props: { analysis: localResult } })
+    expect(wrapper.text()).toContain('该记录未执行案例检索')
+  })
 })

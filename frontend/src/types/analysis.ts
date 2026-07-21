@@ -1,5 +1,7 @@
+import type { AgentCaseImpact, CaseRagResult } from './case'
+
 export type AnalysisMode = 'agents' | 'local_fallback'
-export type ExecutionMode = 'agent' | 'local_fallback'
+export type ExecutionMode = 'agent' | 'local_fallback' | 'local_retrieval' | 'embedding_retrieval'
 export type RiskCategory =
   | 'payment'
   | 'hardware'
@@ -69,6 +71,7 @@ export interface QuoteResult {
   explanation: string
   assumptions: string[]
   payment_terms: string
+  case_impacts?: AgentCaseImpact[]
 }
 
 export interface Recommendation {
@@ -83,6 +86,8 @@ export interface StepTelemetry {
   duration_ms: number
   fallback_used: boolean
   error?: string | null
+  status?: string | null
+  warning?: string | null
 }
 
 export interface AnalysisResponse {
@@ -103,6 +108,7 @@ export interface AnalysisResponse {
     total_duration_ms: number
     steps: StepTelemetry[]
   }
+  case_rag?: CaseRagResult
 }
 
 export interface AnalysisListResponse {
@@ -110,5 +116,5 @@ export interface AnalysisListResponse {
   total: number
   limit: number
   offset: number
+  warnings?: string[]
 }
-

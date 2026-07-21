@@ -138,3 +138,15 @@ def test_analysis_response_uses_one_contract_for_both_modes(mode: AnalysisMode) 
     round_trip = AnalysisResponse.model_validate_json(response.model_dump_json())
     assert round_trip.analysis_mode == mode
     assert round_trip.quote.pricing.currency == "CNY"
+
+
+def test_phase_one_analysis_json_defaults_case_rag() -> None:
+    payload = _build_analysis_response(AnalysisMode.LOCAL_FALLBACK).model_dump(
+        mode="json"
+    )
+    payload.pop("case_rag", None)
+
+    restored = AnalysisResponse.model_validate(payload)
+
+    assert restored.case_rag.status.value == "not_run"
+    assert restored.case_rag.matches == []

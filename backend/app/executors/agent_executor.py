@@ -14,6 +14,30 @@ OutputModelT = TypeVar("OutputModelT", bound=BaseModel)
 RunnerCallable = Callable[..., Awaitable[Any]]
 
 
+class CaseReferenceValidationError(ValueError):
+    pass
+
+
+def _validate_case_references(stage_input: BaseModel, output: BaseModel) -> None:
+    impacts = getattr(output, "case_impacts", None)
+    if not impacts:
+        return
+    matches = getattr(stage_input, "similar_cases", [])
+    allowed = {match.case.project_number for match in matches}
+    invalid = sorted(
+        {
+            impact.project_number
+            for impact in impacts
+            if impact.project_number not in allowed
+        }
+    )
+    if invalid:
+        raise CaseReferenceValidationError(
+            "Agent output referenced cases outside the validated match set: "
+            + ", ".join(invalid)
+        )
+
+
 async def _sdk_runner(agent: Any, prompt: str, **kwargs: Any) -> Any:
     from agents import Runner
 
@@ -46,7 +70,9 @@ class AgentStageExecutor(Generic[InputModelT, OutputModelT]):
             + stage_input.model_dump_json()
         )
         result = await self.runner(self.agent, prompt)
-        return _validate_final_output(result.final_output, self.output_type)
+        output = _validate_final_output(result.final_output, self.output_type)
+        _validate_case_references(stage_input, output)
+        return output
 
 
 class QuoteToolNotCalledError(RuntimeError):
@@ -75,4 +101,6 @@ class QuoteAgentExecutor:
         model_output = _validate_final_output(result.final_output, QuoteAgentOutput)
         if context.pricing is None:
             raise QuoteToolNotCalledError("QuoteAgent did not call calculate_quote")
-        return model_output.model_copy(update={"pricing": context.pricing})
+        locked_output = model_output.model_copy(update={"pricing": context.pricing})
+        _validate_case_references(stage_input, locked_output)
+        return locked_output

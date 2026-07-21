@@ -42,6 +42,7 @@ def test_health_reports_local_mode_without_key(client) -> None:
         "status": "ok",
         "service": "freelance-agent",
         "analysis_mode": "local_fallback",
+        "case_library": {"status": "empty", "error": None},
     }
 
 

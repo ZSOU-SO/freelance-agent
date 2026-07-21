@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import math
+
 from backend.app.schemas.common import (
+    DurationEstimate,
     AcceptanceVerdict,
     Recommendation,
     RiskCategory,
@@ -54,10 +57,34 @@ class LocalTechnicalExecutor:
             )
             for category in dict.fromkeys(risk_categories)
         ]
+        existing_categories = {risk.category for risk in risks}
+        for category in stage_input.case_insight.known_risks:
+            if category not in existing_categories:
+                risks.append(
+                    RiskItem(
+                        category=category,
+                        severity=_RISK_DETAILS[category][0],
+                        reason=f"历史相似案例提示：{_RISK_DETAILS[category][1]}",
+                    )
+                )
+                existing_categories.add(category)
         urgent = RiskCategory.URGENT_DELIVERY in risk_categories
         duration = self.duration_service.estimate(
             requirement.project_type, requirement.features, urgent=urgent
         )
+        adjustment = stage_input.case_insight.duration_adjustment_percent
+        if adjustment:
+            duration = DurationEstimate(
+                min_days=duration.min_days,
+                max_days=max(
+                    duration.min_days,
+                    math.ceil(duration.max_days * (1 + adjustment / 100)),
+                ),
+                explanation=(
+                    f"{duration.explanation}；依据历史案例将最大工期上调 {adjustment}%"
+                ),
+                raw_text=duration.raw_text,
+            )
 
         integrations: list[str] = []
         if "payment" in requirement.features:
@@ -98,5 +125,15 @@ class LocalTechnicalExecutor:
                 verdict=verdict,
                 reasons=reasons,
             ),
+            case_impacts=[
+                {
+                    "agent": "TechnicalAgent",
+                    "project_number": project_number,
+                    "summary": (
+                        f"参考历史案例校准技术风险和工期"
+                        + (f"，最大工期上调 {adjustment}%" if adjustment else "")
+                    ),
+                }
+                for project_number in stage_input.case_insight.source_project_numbers
+            ],
         )
-

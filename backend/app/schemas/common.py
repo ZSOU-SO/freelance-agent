@@ -17,6 +17,8 @@ class AnalysisMode(str, Enum):
 class ExecutionMode(str, Enum):
     AGENT = "agent"
     LOCAL_FALLBACK = "local_fallback"
+    LOCAL_RETRIEVAL = "local_retrieval"
+    EMBEDDING_RETRIEVAL = "embedding_retrieval"
 
 
 class RiskCategory(str, Enum):
@@ -75,4 +77,3 @@ class Recommendation(StrictModel):
     should_accept: bool
     verdict: AcceptanceVerdict
     reasons: list[str] = Field(min_length=1)
-

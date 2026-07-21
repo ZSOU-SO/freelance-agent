@@ -1,7 +1,18 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
+
+from backend.app.persistence.migrations import MigrationRunner
+from backend.app.pipeline.telemetry import sanitize_error
+
+
+@dataclass(frozen=True)
+class DatabaseCapabilities:
+    analyses_available: bool
+    case_library_available: bool
+    case_library_error: str | None = None
 
 
 def connect(database_path: str | Path) -> sqlite3.Connection:
@@ -12,7 +23,11 @@ def connect(database_path: str | Path) -> sqlite3.Connection:
     return connection
 
 
-def initialize_database(database_path: str | Path) -> None:
+def initialize_database(
+    database_path: str | Path,
+    *,
+    migration_runner: MigrationRunner | None = None,
+) -> DatabaseCapabilities:
     with connect(database_path) as connection:
         connection.execute(
             """
@@ -30,4 +45,24 @@ def initialize_database(database_path: str | Path) -> None:
             "CREATE INDEX IF NOT EXISTS idx_analyses_created_at "
             "ON analyses(created_at DESC)"
         )
-
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.commit()
+        try:
+            (migration_runner or MigrationRunner()).apply(connection)
+        except Exception as exc:
+            return DatabaseCapabilities(
+                analyses_available=True,
+                case_library_available=False,
+                case_library_error=sanitize_error(exc),
+            )
+    return DatabaseCapabilities(
+        analyses_available=True,
+        case_library_available=True,
+    )

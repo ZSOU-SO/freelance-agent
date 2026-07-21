@@ -12,6 +12,7 @@ from backend.app.schemas.common import (
     RiskItem,
     StrictModel,
 )
+from backend.app.schemas.case import CaseRagResult
 from backend.app.schemas.quote import QuoteResult
 from backend.app.schemas.requirement import RequirementAgentOutput
 from backend.app.schemas.technical import TechnicalSolution
@@ -35,6 +36,8 @@ class StepTelemetry(StrictModel):
     duration_ms: float = Field(ge=0)
     fallback_used: bool
     error: str | None = None
+    status: str | None = None
+    warning: str | None = None
 
 
 class PipelineTelemetry(StrictModel):
@@ -57,6 +60,7 @@ class AnalysisResponse(StrictModel):
     follow_up_questions: list[str]
     client_reply: str = Field(min_length=1)
     telemetry: PipelineTelemetry
+    case_rag: CaseRagResult = Field(default_factory=CaseRagResult)
 
 
 class AnalysisListResponse(StrictModel):
@@ -64,3 +68,4 @@ class AnalysisListResponse(StrictModel):
     total: int = Field(ge=0)
     limit: int = Field(gt=0)
     offset: int = Field(ge=0)
+    warnings: list[str] = Field(default_factory=list)

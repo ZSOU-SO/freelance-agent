@@ -12,14 +12,29 @@ class LocalQuoteExecutor:
         pricing = self.pricing_service.calculate(
             stage_input.requirement, stage_input.technical.risks
         )
+        case_context = ""
+        if stage_input.case_insight.quote_context_notes:
+            case_context = " " + "；".join(
+                stage_input.case_insight.quote_context_notes
+            )
         return QuoteAgentOutput(
             pricing=pricing,
-            explanation="报价由本地报价规则按项目基础价、功能项和风险系数计算。",
+            explanation=(
+                "报价由本地报价规则按项目基础价、功能项和风险系数计算。"
+                + case_context
+            ),
             assumptions=[
                 "报价为人民币税前区间",
                 "需求范围以当前已识别功能为准",
                 "第三方服务费、硬件采购费和平台手续费不包含在开发报价中",
             ],
             payment_terms="建议 40% 预付款、40% 阶段验收款、20% 最终交付款",
+            case_impacts=[
+                {
+                    "agent": "QuoteAgent",
+                    "project_number": project_number,
+                    "summary": "历史案例仅用于报价解释，规则报价未改变",
+                }
+                for project_number in stage_input.case_insight.source_project_numbers
+            ],
         )
-
