@@ -1,8 +1,8 @@
 # freelance-agent
 
-`freelance-agent` 是一个面向自由职业者和外包团队的全栈需求分析助手。用户输入客户的原始需求后，系统会提取项目范围、识别交付风险、按照本地规则计算报价和工期，并生成接单建议、技术方案、追问问题及可直接发送给客户的回复。
+`freelance-agent` 是一个面向自由职业者和外包团队的全栈需求分析助手。用户输入客户的原始需求后，系统会提取项目范围、识别交付风险、按本地规则计算报价和工期，并生成接单建议、技术方案、追问问题及可直接发送给客户的回复。
 
-当前版本已完成 Phase 2A：除 OpenAI Agents SDK 与完全离线的本地规则双模式外，还提供本地历史案例库和无需 Embedding 的相似案例检索。没有配置 API Key 时，应用仍能正常启动并完成整条分析流程。
+当前版本支持 DeepSeek 与离线本地模式。DeepSeek 通过 OpenAI 兼容接口和 OpenAI Agents SDK 调用；模型负责需求提取、技术分析和客户回复，报价使用确定性的本地规则，历史案例通过本地 BM25 检索。未配置 API Key 时，应用仍能启动并完成分析流程。
 
 ## 核心功能
 
@@ -17,9 +17,9 @@
 - 在分析结果中展示相似度、使用案例的 Agent 和具体影响；
 - 无 `OPENAI_API_KEY` 时自动使用本地规则完成全部分析。
 
-## Agent 流水线架构
+## 分析流水线架构
 
-Pipeline Orchestrator 始终按固定顺序编排五个步骤：
+Pipeline Orchestrator 按固定顺序执行五个步骤，其中三个步骤调用 AI 模型，两个步骤在本地运行：
 
 ```text
 客户需求文本
@@ -34,8 +34,8 @@ RequirementAgent  ── 提取类型、功能、预算、工期及缺失信息
 TechnicalAgent    ── 生成技术方案、工期、风险及接单建议
     │ Pydantic 校验
     ▼
-QuoteAgent        ── 强制调用本地报价工具，模型只解释报价
-    │ Pydantic 校验
+本地报价规则      ── 按项目类型、功能和风险计算金额区间
+    │ 锁定确定性报价
     ▼
 ReplyAgent        ── 生成追问问题、建议摘要和客户回复
     │
@@ -43,20 +43,28 @@ ReplyAgent        ── 生成追问问题、建议摘要和客户回复
 Pipeline Orchestrator 统一响应 ──► SQLite
 ```
 
-每个 Agent 使用独立的 Pydantic 输入、输出模型。前一步输出只有通过校验后才能进入下一步，四个 Agent 不直接构造最终 API 响应。相似案例只传给 TechnicalAgent 和 QuoteAgent；ReplyAgent 不直接消费案例。
+三个模型步骤分别使用独立的 Pydantic 输出模型。模型以 JSON 模式返回结果，后端再进行 Pydantic 校验；只有通过校验的数据才进入下一步。Agent 不直接构造最终 API 响应。相似案例会传给 TechnicalAgent 和本地报价规则用于补充说明。
 
-`QuoteAgent` 必须调用本地 `calculate_quote` 工具。最终报价始终以 `backend/pricing_rules.json` 的计算结果为准，大模型只能补充报价解释、假设和付款建议，不能修改金额区间。
+报价步骤不调用大模型。金额区间始终由 `backend/pricing_rules.json` 计算，避免模型修改报价；分析回复会引用已锁定的金额、工期和风险。
 
 历史成交价同样只能作为比较和解释。TechnicalAgent 只有在至少两个高质量已成交案例显示超过 15% 的工期偏差时，才会把最大工期上调，且最多上调 20%。
 
-第一阶段没有 Manager Agent 和 handoff；执行器接口与编排层已保持独立，便于后续扩展。
+当前没有 Manager Agent 和 handoff；执行器接口与编排层保持独立，便于后续扩展。
+
+### DeepSeek 兼容处理
+
+- Agents SDK 使用 Chat Completions 接口调用兼容服务；
+- 模型通过 JSON Object 模式输出，Pydantic 在本地校验具体字段和类型；
+- 检测到 DeepSeek 接口时关闭思考模式，避免与 JSON 输出流程不兼容；
+- API Key 只配置在后端进程环境变量中，不发送给浏览器前端；
+- 单个模型步骤失败时仅该步骤回退到本地执行器，并在执行详情中记录原因。
 
 ## 本地降级机制
 
 系统提供两级降级：
 
-1. **无 Key 的完整本地模式**：`OPENAI_API_KEY` 未设置或为空时，四个步骤都调用对应的本地执行器，不创建 OpenAI 客户端。响应标记为 `analysis_mode: local_fallback`，前端显示“本地规则分析，未调用大模型”。这是正常运行模式，因此 `fallback_occurred` 为 `false`。
-2. **Agent 单步故障降级**：配置 Key 后，流水线优先使用四个 Agent。任一步骤发生超时、调用失败或输出校验失败时，Orchestrator 会记录经过脱敏的错误并仅对该步骤调用本地执行器，其余步骤继续执行。此时整体 `analysis_mode` 仍为 `agents`，`fallback_occurred` 为 `true`。
+1. **无 Key 的完整本地模式**：`OPENAI_API_KEY` 未设置或为空时，需求提取、技术分析和客户回复使用本地执行器；报价规则和 BM25 检索本来就在本地运行。响应标记为 `analysis_mode: local_fallback`，前端显示“本地规则分析，未调用大模型”。这是正常运行模式，因此 `fallback_occurred` 为 `false`。
+2. **模型步骤故障降级**：配置 Key 后，三个模型步骤调用 AI。任一步骤发生超时、调用失败或输出校验失败时，Orchestrator 会记录经过脱敏的错误并仅对该步骤调用本地执行器，其余步骤继续执行。此时整体 `analysis_mode` 仍为 `agents`，`fallback_occurred` 为 `true`。报价仍按本地规则计算，不计为降级。
 
 两种模式使用完全相同的 `AnalysisResponse` 数据结构，前端、存储层和测试无需针对模式维护两套契约。
 
@@ -67,10 +75,10 @@ Pipeline Orchestrator 统一响应 ──► SQLite
 | 层级 | 技术 |
 | --- | --- |
 | 后端 | Python 3.11+、FastAPI、Pydantic v2、Uvicorn |
-| Agent | OpenAI Agents SDK、四 Agent 显式流水线 |
+| Agent | OpenAI Agents SDK、三模型步骤显式流水线、DeepSeek OpenAI 兼容接口 |
 | 本地分析 | Python 规则执行器、正则与关键词规则 |
 | 案例 RAG | 纯 Python BM25、中文字符二元组、结构化 Jaccard 加权 |
-| 报价 | 本地 `pricing_rules.json` 与受控报价工具 |
+| 报价 | 本地 `pricing_rules.json` 确定性计算 |
 | 数据库 | SQLite |
 | 前端 | Vue 3、Vue Router、TypeScript、Vite |
 | 测试 | pytest、pytest-asyncio、Vitest、Vue Test Utils |
@@ -81,7 +89,7 @@ Pipeline Orchestrator 统一响应 ──► SQLite
 freelance-agent/
 ├─ backend/
 │  ├─ app/
-│  │  ├─ agents/          # 四个 OpenAI Agent 工厂
+│  │  ├─ agents/          # 三个模型 Agent 工厂与兼容设置
 │  │  ├─ executors/       # Agent 适配器和四个本地执行器
 │  │  ├─ pipeline/        # 固定顺序、校验、降级和遥测
 │  │  ├─ retrieval/       # BM25 Provider、检索服务和案例洞察
@@ -143,6 +151,23 @@ export OPENAI_API_KEY=''
 - 后端默认地址：<http://127.0.0.1:8000>
 - OpenAPI 文档：<http://127.0.0.1:8000/docs>
 
+### 使用 DeepSeek（Windows PowerShell）
+
+在启动后端的同一个 PowerShell 窗口中设置密钥和模型，再启动服务。输入密钥时不会显示在屏幕上：
+
+```powershell
+$secureKey = Read-Host '请输入 DeepSeek API Key' -AsSecureString
+$env:OPENAI_API_KEY = [System.Net.NetworkCredential]::new('', $secureKey).Password
+$env:OPENAI_BASE_URL = 'https://api.deepseek.com'
+$env:OPENAI_MODEL = 'deepseek-flash'
+$env:OPENAI_AGENTS_DISABLE_TRACING = '1'
+$env:FRONTEND_ORIGIN = 'http://localhost:5173'
+
+& '.\.venv\Scripts\python.exe' -m uvicorn backend.app.main:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+如果本机的 8000 端口已被占用，可以改用 8001，并将前端 API 地址配置为 `http://127.0.0.1:8001/api/v1`；前后端端口变化时，也要让 `FRONTEND_ORIGIN` 与浏览器地址一致。不要把真实 Key 发到聊天、写入文件或提交到 GitHub。
+
 ## 前端启动方法
 
 打开另一个终端并在仓库根目录执行：
@@ -159,7 +184,8 @@ npm.cmd --prefix frontend run dev
 | 变量 | 必需 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `OPENAI_API_KEY` | 否 | 空 | 非空时启用 Agents 模式；为空时使用完整本地模式 |
-| `OPENAI_MODEL` | 否 | Agents SDK 默认模型 | 可选的 Agent 模型名 |
+| `OPENAI_BASE_URL` | 否 | OpenAI SDK 默认地址 | DeepSeek 使用 `https://api.deepseek.com` |
+| `OPENAI_MODEL` | 否 | Agents SDK 默认模型 | DeepSeek 示例使用 `deepseek-flash` |
 | `DATABASE_PATH` | 否 | `backend/data/freelance_agent.sqlite3` | SQLite 文件位置 |
 | `PRICING_RULES_PATH` | 否 | `backend/pricing_rules.json` | 本地报价规则位置 |
 | `FRONTEND_ORIGIN` | 否 | `http://localhost:5173` | 后端允许的前端来源 |
@@ -202,7 +228,7 @@ npm.cmd --prefix frontend test -- --run
 npm.cmd --prefix frontend run build
 ```
 
-测试覆盖四个 Agent 适配器、四个本地执行器、报价工具、风险与工期规则、BM25 排序、案例洞察、迁移、案例 CRUD/Search API、五步流水线、SQLite repositories 和主要 Vue 页面。Agent 单元测试通过注入 runner 完成，不调用真实服务。
+测试覆盖三个 Agent 适配器、四个本地执行器、报价规则、风险与工期规则、BM25 排序、案例洞察、迁移、案例 CRUD/Search API、五步流水线、SQLite repositories 和主要 Vue 页面。Agent 单元测试通过注入 runner 完成，不调用真实服务。
 
 ## 示例输入与输出
 

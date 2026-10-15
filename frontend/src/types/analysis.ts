@@ -1,7 +1,7 @@
 import type { AgentCaseImpact, CaseRagResult } from './case'
 
 export type AnalysisMode = 'agents' | 'local_fallback'
-export type ExecutionMode = 'agent' | 'local_fallback' | 'local_retrieval' | 'embedding_retrieval'
+export type ExecutionMode = 'agent' | 'local_fallback' | 'local_rules' | 'local_retrieval' | 'embedding_retrieval'
 export type RiskCategory =
   | 'payment'
   | 'hardware'

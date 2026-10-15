@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.app.agents.model_compat import json_object_model_settings
 from backend.app.schemas.requirement import RequirementAgentOutput
 
 
@@ -15,6 +16,7 @@ def build_requirement_agent(model: str | None = None) -> Any:
             "工期、风险信号和缺失信息。未知信息保持为空，不得猜测。"
         ),
         model=model,
-        output_type=RequirementAgentOutput,
+        model_settings=json_object_model_settings(),
+        output_type=None,
     )
 

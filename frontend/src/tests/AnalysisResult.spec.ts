@@ -96,6 +96,27 @@ describe('AnalysisResult', () => {
     expect(wrapper.text()).toContain('部分步骤已自动降级')
   })
 
+  it('shows that quote calculation uses local pricing rules by design', () => {
+    const wrapper = mount(AnalysisResult, {
+      props: {
+        analysis: {
+          ...localResult,
+          analysis_mode: 'agents',
+          fallback_occurred: false,
+          telemetry: {
+            ...localResult.telemetry,
+            steps: [{
+              step: 'quote', execution_mode: 'local_rules', duration_ms: 2,
+              fallback_used: false, error: null,
+            }],
+          },
+        },
+      },
+    })
+    expect(wrapper.text()).toContain('本地报价规则')
+    expect(wrapper.text()).not.toContain('已降级')
+  })
+
   it('keeps the normal result visible when case retrieval failed', () => {
     const wrapper = mount(AnalysisResult, {
       props: {

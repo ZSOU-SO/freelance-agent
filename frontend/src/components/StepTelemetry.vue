@@ -22,7 +22,7 @@ const stageNames: Record<string, string> = {
           <span>{{ step.duration_ms.toFixed(1) }} ms</span>
         </div>
         <p>
-          {{ step.execution_mode === 'agent' ? 'Agent' : step.execution_mode === 'local_retrieval' ? '本地 BM25' : step.execution_mode === 'embedding_retrieval' ? '向量检索' : '本地规则' }}
+          {{ step.execution_mode === 'agent' ? 'AI 模型' : step.execution_mode === 'local_retrieval' ? '本地 BM25' : step.execution_mode === 'embedding_retrieval' ? '向量检索' : step.execution_mode === 'local_rules' && step.step === 'quote' ? '本地报价规则' : '本地规则' }}
           <em v-if="step.fallback_used">· 已降级</em>
         </p>
         <p v-if="step.status">状态：{{ step.status }}</p>

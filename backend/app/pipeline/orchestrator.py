@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from backend.app.core.config import Settings
-from backend.app.executors.agent_executor import AgentStageExecutor, QuoteAgentExecutor
+from backend.app.executors.agent_executor import AgentStageExecutor
 from backend.app.executors.local.quote_executor import LocalQuoteExecutor
 from backend.app.executors.local.reply_executor import LocalReplyExecutor
 from backend.app.executors.local.requirement_executor import LocalRequirementExecutor
@@ -81,10 +81,13 @@ class PipelineOrchestrator:
         }
 
     def _build_agent_executors(self) -> dict[str, Any]:
+        from agents import set_default_openai_api
+
         from backend.app.agents.reply_agent import build_reply_agent
         from backend.app.agents.requirement_agent import build_requirement_agent
         from backend.app.agents.technical_agent import build_technical_agent
 
+        set_default_openai_api("chat_completions")
         model = self.settings.openai_model
         return {
             "requirement": AgentStageExecutor(
@@ -95,7 +98,6 @@ class PipelineOrchestrator:
                 agent=build_technical_agent(model),
                 output_type=TechnicalAgentOutput,
             ),
-            "quote": QuoteAgentExecutor(self.pricing_service, model=model),
             "reply": AgentStageExecutor(
                 agent=build_reply_agent(model),
                 output_type=ReplyAgentOutput,
@@ -108,11 +110,16 @@ class PipelineOrchestrator:
         stage_input: BaseModel,
         output_type: type[BaseModel],
         analysis_mode: AnalysisMode,
+        *,
+        use_primary: bool = True,
     ) -> tuple[BaseModel, StepTelemetry]:
         started = self.clock()
         error: str | None = None
         fallback_used = False
-        if analysis_mode == AnalysisMode.LOCAL_FALLBACK:
+        if not use_primary:
+            raw_output = await self.local_executors[name].execute(stage_input)
+            execution_mode = ExecutionMode.LOCAL_RULES
+        elif analysis_mode == AnalysisMode.LOCAL_FALLBACK:
             raw_output = await self.local_executors[name].execute(stage_input)
             execution_mode = ExecutionMode.LOCAL_FALLBACK
         else:
@@ -260,6 +267,7 @@ class PipelineOrchestrator:
             ),
             QuoteAgentOutput,
             analysis_mode,
+            use_primary=False,
         )
         telemetry_steps.append(metric)
         assert isinstance(quote, QuoteAgentOutput)

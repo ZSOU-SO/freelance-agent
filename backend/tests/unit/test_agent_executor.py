@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from backend.app.agents.requirement_agent import build_requirement_agent
 from backend.app.agents.reply_agent import build_reply_agent
 from backend.app.agents.technical_agent import build_technical_agent
+from backend.app.agents.model_compat import json_object_model_settings
 from backend.app.executors.agent_executor import AgentStageExecutor
 from backend.app.schemas.reply import ReplyAgentOutput
 from backend.app.schemas.requirement import RequirementAgentInput, RequirementAgentOutput
@@ -40,6 +41,7 @@ async def test_agent_adapter_validates_structured_final_output() -> None:
 
     assert result == expected
     assert "开发企业官网" in runner.calls[0][1]
+    assert "JSON Schema" in runner.calls[0][1]
 
 
 @pytest.mark.asyncio
@@ -57,7 +59,23 @@ async def test_agent_adapter_rejects_invalid_output() -> None:
 def test_requirement_agent_uses_its_independent_output_model() -> None:
     agent = build_requirement_agent(model="test-model")
     assert agent.name == "RequirementAgent"
-    assert agent.output_type is RequirementAgentOutput
+    assert agent.output_type is None
+    assert agent.model_settings.extra_body["response_format"] == {"type": "json_object"}
+
+
+def test_deepseek_disables_reasoning_for_json_stages(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com")
+    settings = json_object_model_settings()
+    assert settings.extra_body == {
+        "response_format": {"type": "json_object"},
+        "thinking": {"type": "disabled"},
+    }
+
+
+def test_non_deepseek_json_stage_does_not_send_provider_specific_fields(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    settings = json_object_model_settings()
+    assert settings.extra_body == {"response_format": {"type": "json_object"}}
 
 
 @pytest.mark.parametrize(
@@ -73,5 +91,6 @@ def test_phase_one_agents_have_independent_outputs_and_no_handoffs(
 ) -> None:
     agent = factory(model="test-model")
     assert agent.name == name
-    assert agent.output_type is output_type
+    assert agent.output_type is None
+    assert agent.model_settings.extra_body["response_format"] == {"type": "json_object"}
     assert agent.handoffs == []

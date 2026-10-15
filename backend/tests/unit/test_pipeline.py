@@ -153,9 +153,10 @@ async def test_no_key_runs_five_steps_in_fixed_order(tmp_path) -> None:
     assert all(
         step.execution_mode == ExecutionMode.LOCAL_FALLBACK
         for step in result.telemetry.steps
-        if step.step != "case_retrieval"
+        if step.step not in {"case_retrieval", "quote"}
     )
     assert result.telemetry.steps[1].execution_mode == ExecutionMode.LOCAL_RETRIEVAL
+    assert result.telemetry.steps[3].execution_mode == ExecutionMode.LOCAL_RULES
 
 
 @pytest.mark.asyncio
@@ -181,7 +182,7 @@ async def test_one_agent_failure_falls_back_only_that_stage(tmp_path) -> None:
         "retrieval",
         "agent:technical",
         "local:technical",
-        "agent:quote",
+        "local:quote",
         "agent:reply",
     ]
     assert result.analysis_mode == AnalysisMode.AGENTS
@@ -191,6 +192,9 @@ async def test_one_agent_failure_falls_back_only_that_stage(tmp_path) -> None:
     assert technical_step.fallback_used is True
     assert technical_step.error == "RuntimeError: provider unavailable"
     assert sum(step.fallback_used for step in result.telemetry.steps) == 1
+    quote_step = result.telemetry.steps[3]
+    assert quote_step.execution_mode == ExecutionMode.LOCAL_RULES
+    assert quote_step.fallback_used is False
 
 
 @pytest.mark.asyncio

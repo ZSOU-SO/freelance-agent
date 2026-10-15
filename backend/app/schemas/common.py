@@ -17,6 +17,7 @@ class AnalysisMode(str, Enum):
 class ExecutionMode(str, Enum):
     AGENT = "agent"
     LOCAL_FALLBACK = "local_fallback"
+    LOCAL_RULES = "local_rules"
     LOCAL_RETRIEVAL = "local_retrieval"
     EMBEDDING_RETRIEVAL = "embedding_retrieval"
 
